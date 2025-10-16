@@ -1,4 +1,4 @@
-name: Deploy to GHCR
+name: Deploy to GHCR (Main)
 on:
   push:
     branches:

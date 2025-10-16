@@ -1,6 +1,6 @@
 ---
-name: Bug Report
-about: File a bug
+name: Bug Report with traditional mkdwn format
+about: File a bug in mkdwn
 ---
 ## Bug Report
 **Describe the bug**:
