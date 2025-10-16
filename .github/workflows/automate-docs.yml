@@ -1,5 +1,8 @@
 name: Auto-Update Wiki & Project
-on: [issues, pull_request]
+on:
+  issues:
+  pull_request:
+    branches: [dev]  # Trigger on PRs targeting dev
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -25,11 +28,12 @@ jobs:
           cd wiki-temp
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+          git checkout dev || git checkout -b dev
           git add .
           git commit -m "docs: auto-update wiki" || echo "No changes to commit"
-          git push https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git main
+          git push https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git dev
       - name: Auto-Update Project
-        if: github.event.pull_request.merged == true
+        if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev'
         run: |
           ISSUE_NUMBER=${{ github.event.pull_request.number }}
           ISSUE_ID=$(gh api graphql -f query="query { repository(owner: \"${{ github.repository_owner }}\", name: \"${{ github.repository_name }}\") { issue(number: $ISSUE_NUMBER) { id } } }" --jq '.data.repository.issue.id')
