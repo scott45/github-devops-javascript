@@ -1,27 +1,27 @@
 name: Auto-Update Wiki & Project
-     on: [issues, pull_request]
-     jobs:
-       update:
-         runs-on: ubuntu-latest
-         steps:
-           - uses: actions/checkout@v4
-           - name: Install GH CLI
-             run: |
-               sudo apt update && sudo apt install curl -y
-               curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-               echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
-               sudo apt update && sudo apt install gh -y
-               gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
-           - name: Auto-Update Wiki
-             run: |
-               ISSUES=$(gh issue list --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"')
-               echo "# Project Updates\n\n## Recent Issues\n$ISSUES" > wiki/Home.md
-               git clone https://github.com/${{ github.repository_owner }}/${{ github.repository }}.wiki.git wiki-temp
-               cp wiki/Home.md wiki-temp/
-               cd wiki-temp && git add . && git commit -m "docs: auto-update wiki" && git push
-           - name: Auto-Update Project
-             if: github.event.pull_request.merged == true
-             run: |
-               ISSUE_NUMBER=${{ github.event.pull_request.number }}
-               ISSUE_ID=$(gh api graphql -f query="query { repository(owner: \"${{ github.repository_owner }}\", name: \"${{ github.repository_name }}\") { issue(number: $ISSUE_NUMBER) { id } } }" --jq '.data.repository.issue.id')
-               gh api graphql -f query="mutation { updateProjectV2ItemFieldValue(input: { projectId: \"${{ secrets.PROJECT_ID }}\", itemId: \"$ISSUE_ID\", fieldId: \"${{ secrets.STATUS_FIELD_ID }}\", value: { singleSelectOptionId: \"${{ secrets.DONE_OPTION_ID }}\" } }) { projectV2Item { id } } }"
+on: [issues, pull_request]
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GH CLI
+        run: |
+          sudo apt update && sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
+          sudo apt update && sudo apt install gh -y
+          gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
+      - name: Auto-Update Wiki
+        run: |
+          ISSUES=$(gh issue list --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"')
+          echo "# Project Updates\n\n## Recent Issues\n$ISSUES" > wiki/Home.md
+          git clone https://github.com/${{ github.repository_owner }}/${{ github.repository }}.wiki.git wiki-temp
+          cp wiki/Home.md wiki-temp/
+          cd wiki-temp && git add . && git commit -m "docs: auto-update wiki" && git push
+      - name: Auto-Update Project
+        if: github.event.pull_request.merged == true
+        run: |
+          ISSUE_NUMBER=${{ github.event.pull_request.number }}
+          ISSUE_ID=$(gh api graphql -f query="query { repository(owner: \"${{ github.repository_owner }}\", name: \"${{ github.repository_name }}\") { issue(number: $ISSUE_NUMBER) { id } } }" --jq '.data.repository.issue.id')
+          gh api graphql -f query="mutation { updateProjectV2ItemFieldValue(input: { projectId: \"${{ secrets.PROJECT_ID }}\", itemId: \"$ISSUE_ID\", fieldId: \"${{ secrets.STATUS_FIELD_ID }}\", value: { singleSelectOptionId: \"${{ secrets.DONE_OPTION_ID }}\" } }) { projectV2Item { id } } }"
