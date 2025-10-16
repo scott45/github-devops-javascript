@@ -20,7 +20,7 @@ jobs:
         run: |
           mkdir -p wiki
           ISSUES=$(gh issue list --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No issues found")
-          echo "# Project Updates\n\n## Recent Issues\n$ISSUES" > wiki/Home.md
+          echo -e "# Project Updates\n\n## Recent Issues\n$ISSUES" > wiki/Home.md
           git clone https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki-temp || (
             echo "Error: Wiki repo not found. Please initialize the wiki in the GitHub UI at https://github.com/${{ github.repository }}/wiki"
             exit 1
