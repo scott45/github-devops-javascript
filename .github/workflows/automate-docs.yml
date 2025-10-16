@@ -3,7 +3,7 @@ on:
   push:
     branches: [ "dev", "main" ]  # Trigger on PRs targeting dev
   pull_request:
-    types: [opened, edited, reopened, closed]
+    types: [opened, reopened, closed]
 jobs:
   update:
     if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
