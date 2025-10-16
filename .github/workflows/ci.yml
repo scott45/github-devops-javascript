@@ -10,4 +10,6 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Check Conventional Commits
-        uses: amannn/action-semantic-commit@v1
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}
