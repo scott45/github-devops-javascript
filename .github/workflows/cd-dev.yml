@@ -1,9 +1,8 @@
-name: Deploy to GHCR
+name: Deploy to GHCR (Dev)
 on:
   push:
     branches:
       - dev
-    # tags: ['v*']
   workflow_dispatch:
 jobs:
   deploy:
@@ -21,5 +20,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.DEMO_GITHUB_TOKEN }}
       - run: |
-          docker build -t ghcr.io/${{ github.repository }}:rc .
-          docker push ghcr.io/${{ github.repository }}:rc
+          # Extract PR number from merge commit message (e.g., "Merge pull request #5...")
+          PR_NUMBER=$(git log -1 --pretty=%B | grep -oE 'Merge pull request #([0-9]+)' | sed 's/Merge pull request #//g' || echo "unknown")
+          # Use short commit hash (first 7 chars)
+          COMMIT_HASH=$(git rev-parse --short=7 HEAD)
+          # Construct tag (e.g., pr5-a1b2c3d)
+          TAG="pr${PR_NUMBER}-${COMMIT_HASH}"
+          # Build and push with dynamic tag
+          docker build -t ghcr.io/${{ github.repository }}:$TAG .
+          docker push ghcr.io/${{ github.repository }}:$TAG

@@ -1,5 +1,5 @@
-name: Bug Report
-description: File a bug
+name: Bug Report yml
+description: File a bug with yml 
 body:
   - type: textarea
     id: description
