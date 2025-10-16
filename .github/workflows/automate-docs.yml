@@ -19,8 +19,12 @@ jobs:
       - name: Auto-Update Wiki
         run: |
           mkdir -p wiki
-          ISSUES=$(gh issue list --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No issues found")
-          echo -e "# Project Updates\n\n## Recent Issues\n$ISSUES" > wiki/Home.md
+          # Get open issues
+          ISSUES_OPEN=$(gh issue list --state open --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No open issues")
+          # Get closed issues
+          ISSUES_CLOSED=$(gh issue list --state closed --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No closed issues")
+          # Generate Markdown with subsections
+          echo -e "# Project Updates\n\n## To-Do\n$ISSUES_OPEN\n\n## Done\n$ISSUES_CLOSED" > wiki/Home.md
           git clone https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki-temp || (
             echo "Error: Wiki repo not found. Please initialize the wiki in the GitHub UI at https://github.com/${{ github.repository }}/wiki"
             exit 1
@@ -31,7 +35,7 @@ jobs:
           git config user.email "actions@github.com"
           git checkout master || git checkout -b master
           git add .
-          git commit -m "docs: auto-update wiki" || echo "No changes to commit"
+          git commit -m "docs: auto-update wiki" || git commit -m "docs: force update wiki"
           git push https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git master
       - name: Auto-Update Project
         if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev'
