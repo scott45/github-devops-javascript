@@ -2,6 +2,8 @@ name: Auto-Update Wiki & Project
 on:
   push:
     branches: [ "dev", "main" ]  # Trigger on PRs targeting dev
+  pull_request:
+    types: [opened, edited, reopened, closed]
 jobs:
   update:
     if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
@@ -15,26 +17,71 @@ jobs:
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
           sudo apt update && sudo apt install gh -y
           gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
-      - name: Auto-Update Wiki
+      - name: Auto-Update Wiki (Issues + PRs)
+        env:
+          GH_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
           mkdir -p wiki
-          ISSUES_OPEN=$(gh issue list --state open --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No open issues")
-          ISSUES_CLOSED=$(gh issue list --state closed --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No closed issues")
-          echo -e "# Project Updates\n\n## To-Do\n$ISSUES_OPEN\n\n## Done\n$ISSUES_CLOSED" > wiki/Home.md
-          git clone https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki-temp || (
-            echo "Error: Wiki repo not found. Please initialize the wiki in the GitHub UI at https://github.com/${{ github.repository }}/wiki"
+
+          # Open / Closed Issues
+          ISSUES_OPEN=$(gh issue list --state open   --json title,createdAt       --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || true)
+          ISSUES_CLOSED=$(gh issue list --state closed --json title,createdAt     --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || true)
+
+          # Open / Merged PRs
+          PRS_OPEN=$(gh pr list --state open     --json title,createdAt           --jq '.[] | "- \(.title) (Opened: \(.createdAt))"' || true)
+          PRS_MERGED=$(gh pr list --state merged --json title,mergedAt            --jq '.[] | "- \(.title) (Merged: \(.mergedAt))"'  || true)
+
+          # Fallback text if lists are empty
+          [ -n "$ISSUES_OPEN"  ] || ISSUES_OPEN="(none)"
+          [ -n "$ISSUES_CLOSED"] || ISSUES_CLOSED="(none)"
+          [ -n "$PRS_OPEN"     ] || PRS_OPEN="(none)"
+          [ -n "$PRS_MERGED"   ] || PRS_MERGED="(none)"
+
+          cat > wiki/Home.md <<'EOF'
+          # Project Updates
+
+          ## To-Do
+          ### Issues
+          __ISSUES_OPEN__
+          ### Pull Requests
+          __PRS_OPEN__
+
+          ## Done
+          ### Issues (Closed)
+          __ISSUES_CLOSED__
+          ### Pull Requests (Merged)
+          __PRS_MERGED__
+          EOF
+
+          # Inject the dynamic lists
+          sed -i 's|__ISSUES_OPEN__|'"$(printf '%s\n' "$ISSUES_OPEN"  | sed 's/[&/\]/\\&/g')"|g' wiki/Home.md
+          sed -i 's|__ISSUES_CLOSED__|'"$(printf '%s\n' "$ISSUES_CLOSED"| sed 's/[&/\]/\\&/g')"|g' wiki/Home.md
+          sed -i 's|__PRS_OPEN__|'"$(printf '%s\n' "$PRS_OPEN"       | sed 's/[&/\]/\\&/g')"|g' wiki/Home.md
+          sed -i 's|__PRS_MERGED__|'"$(printf '%s\n' "$PRS_MERGED"    | sed 's/[&/\]/\\&/g')"|g' wiki/Home.md
+
+          # Clone wiki repo
+          git clone "https://${{ github.actor }}:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki-temp || {
+            echo "Error: Wiki repo not found. Please initialize the wiki in the GitHub UI (Wiki tab)."
             exit 1
-          )
+          }
+
           cp wiki/Home.md wiki-temp/
           cd wiki-temp
+
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git checkout master || git checkout -b master
-          git reset --hard  # Ensure clean state
+
+          # Detect wiki default branch (master/main)
+          DEFAULT_BRANCH=$(git remote show origin | awk '/HEAD branch/ {print $NF}')
+          git checkout "$DEFAULT_BRANCH" || git checkout -b "$DEFAULT_BRANCH"
+
           git add .
-          TIMESTAMP=$(date -u +"%Y%m%d%H%M%S")
-          git commit -m "docs: auto-update wiki [run $TIMESTAMP]" || echo "No changes detected, but workflow continues"
-          git push https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git master
+          TS=$(date -u +"%Y%m%d%H%M%S")
+          git commit -m "docs: auto-update wiki [run $TS]" || { echo "No changes to commit"; exit 0; }
+          git push "https://${{ github.actor }}:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git" "$DEFAULT_BRANCH"
+
       - name: Auto-Update Project
         if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev'
         run: |
