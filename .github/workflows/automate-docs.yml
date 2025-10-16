@@ -17,9 +17,24 @@ jobs:
           mkdir -p wiki
           ISSUES=$(gh issue list --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No issues found")
           echo "# Project Updates\n\n## Recent Issues\n$ISSUES" > wiki/Home.md
-          git clone https://github.com/${{ github.repository_owner }}/${{ github.repository }}.wiki.git wiki-temp || (git init wiki-temp && cd wiki-temp && git remote add origin https://github.com/${{ github.repository_owner }}/${{ github.repository }}.wiki.git && git checkout -b main)
+          git clone https://github.com/${{ github.repository_owner }}/${{ github.repository }}.wiki.git wiki-temp || (
+            echo "Wiki repo not found, initializing..."
+            mkdir wiki-temp
+            cd wiki-temp
+            git init
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git remote add origin https://github.com/${{ github.repository_owner }}/${{ github.repository }}.wiki.git
+            touch Home.md
+            git add Home.md
+            git commit -m "chore: initialize wiki repo"
+            git branch -M main
+            git push -u origin main
+          )
           cp wiki/Home.md wiki-temp/
           cd wiki-temp
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
           git add .
           git commit -m "docs: auto-update wiki" || echo "No changes to commit"
           git push origin main

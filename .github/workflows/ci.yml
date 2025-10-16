@@ -1,5 +1,5 @@
 name: CI Pipeline
-on: [pull_request, push]
+on: [pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
