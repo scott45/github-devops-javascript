@@ -2,8 +2,6 @@ name: Auto-Update Wiki & Project
 on:
   push:
     branches: [ "dev", "main" ]  # Trigger on PRs targeting dev
-  issues:
-    types: [opened]
 jobs:
   update:
     if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
