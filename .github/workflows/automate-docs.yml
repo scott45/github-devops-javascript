@@ -1,7 +1,7 @@
 name: Auto-Update Wiki & Project
 on:
   issues:
-    types: [opened, edited, closed, reopened]
+    types: [opened, closed] # [opened, edited, closed, reopened]
 jobs:
   update:
     if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'

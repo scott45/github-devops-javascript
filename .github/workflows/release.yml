@@ -1,0 +1,45 @@
+name: Prepare Release
+on:
+  push:
+    branches:
+      - main
+jobs:
+  release:
+    if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for last tag and notes
+      - name: Install GH CLI
+        run: |
+          sudo apt update && sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
+          sudo apt update && sudo apt install gh -y
+          gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
+      - name: Generate Release Notes and Tag
+        run: |
+          # Get last tag or default to v1.0.0
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v1.0.0")
+          # Extract PR title from merge commit message (e.g., "Merge pull request #X from ... feat!: release v1.0.0")
+          PR_TITLE=$(git log -1 --merges --pretty=%s | sed 's/Merge pull request #[0-9]\+ from .*//;s/ .*//')
+          # Determine version bump based on PR title prefix
+          MAJOR=$(echo "$PR_TITLE" | grep -q "^feat!:" && echo 1 || echo 0)
+          MINOR=$(echo "$PR_TITLE" | grep -q "^\(feat:\|fix:\|refactor:\)" && echo 1 || echo 0)
+          PATCH=$(echo "$PR_TITLE" | grep -q "^\(chore:\|docs:\|test:\)" && echo 1 || echo 0)
+          # Parse current version
+          CURRENT_MAJOR=$(echo $LAST_TAG | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)/\1/')
+          CURRENT_MINOR=$(echo $LAST_TAG | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)/\2/')
+          CURRENT_PATCH=$(echo $LAST_TAG | sed 's/v\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)/\3/')
+          # Calculate new version (only one level bumps)
+          NEW_MAJOR=$((CURRENT_MAJOR + MAJOR))
+          NEW_MINOR=$((CURRENT_MINOR + MINOR * (1 - MAJOR)))
+          NEW_PATCH=$((CURRENT_PATCH + PATCH * (1 - MAJOR) * (1 - MINOR)))
+          TAG="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
+          # Extract notes from commits since last tag
+          NOTES=$(git log $LAST_TAG..HEAD --pretty=format:"- %s" | grep -E "^(feat|fix|chore|docs|test|refactor):" || echo "Initial release")
+          # Create tag and draft release
+          git tag $TAG
+          git push origin $TAG
+          gh release create $TAG --title "Release ${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}" --notes "$NOTES" --draft
