@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for last tag and notes
+          fetch-depth: 0  # full history
       - name: Install GH CLI
         run: |
           sudo apt update && sudo apt install curl -y
@@ -18,16 +18,44 @@ jobs:
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
           sudo apt update && sudo apt install gh -y
           gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
-      - name: Generate Release and Publish
+
+      - name: Generate Release and Publish (latest tag by time)
         env:
           GH_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}  # gh uses this too
+          GITHUB_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # 1) Get last tag or default
-          LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo 'v1.0.0')"
-          echo "Last tag: $LAST_TAG"
+          # Ensure tags are present locally
+          git fetch --tags --force
+
+          # 1) Get latest tag by creation time (not ancestry). Fallback to v1.0.0
+          RAW_LAST_TAG="$(git for-each-ref --sort=-creatordate --format '%(refname:short)' refs/tags | head -n1 || true)"
+          if [ -z "${RAW_LAST_TAG:-}" ]; then
+            LAST_TAG="v1.0.0"
+            TAG_START_DATE=""   # no previous tag; we'll treat notes as initial
+          else
+            LAST_TAG="$RAW_LAST_TAG"
+          fi
+
+          # Normalize to vX.Y.Z form for parsing
+          case "$LAST_TAG" in
+            v*) ;;  # already has v
+            *) LAST_TAG="v$LAST_TAG" ;;
+          esac
+          echo "Last tag (by time): $LAST_TAG"
+
+          # 1a) Determine the timestamp of the last tag (works for annotated/lightweight)
+          # Try taggerdate; if absent (lightweight), use the commit date of the tagged object.
+          TAG_START_DATE="$(git for-each-ref --format='%(taggerdate:iso8601)' "refs/tags/${LAST_TAG#v}" | head -n1 || true)"
+          if [ -z "${TAG_START_DATE:-}" ]; then
+            # For lightweight tags, resolve to the tagged object and use its committer date
+            TAG_COMMIT="$(git rev-list -n 1 "$LAST_TAG" 2>/dev/null || true)"
+            if [ -n "${TAG_COMMIT:-}" ]; then
+              TAG_START_DATE="$(git show -s --format=%cI "$TAG_COMMIT")"
+            fi
+          fi
+          echo "Last tag date (iso8601): ${TAG_START_DATE:-<none>}"
 
           # 2) Parse current version numbers from LAST_TAG (vX.Y.Z)
           CURRENT_MAJOR="$(echo "$LAST_TAG" | sed -n 's/^v\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)$/\1/p')"
@@ -39,38 +67,24 @@ jobs:
             exit 1
           fi
 
-          # Initialize new version with current (we'll increment below)
           NEW_MAJOR="$CURRENT_MAJOR"
           NEW_MINOR="$CURRENT_MINOR"
           NEW_PATCH="$CURRENT_PATCH"
 
-          # 3) Get merged PR title for this push (to main)
-          #    Use the GH API to find the PR(s) associated with this commit SHA.
-          #    The endpoint returns an array; take the first one.
+          # 3) Get merged PR title associated with this push commit (if any)
           PR_TITLE="$(gh api \
             -H "Accept: application/vnd.github+json" \
             "repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
             --jq '.[0].title' || true)"
-
           echo "PR title: ${PR_TITLE:-<none>}"
 
-          # 4) Decide bump based on PR title (Conventional Commits)
-          #    feat!: -> major, feat: -> minor, otherwise -> patch
+          # 4) Decide bump via Conventional Commits
           BUMP="patch"
           case "${PR_TITLE:-}" in
-            feat!:*)
-              BUMP="major"
-              ;;
-            feat:*)
-              BUMP="minor"
-              ;;
-            fix:*|refactor:*|chore:*|docs:*|test:*)
-              BUMP="patch"
-              ;;
-            *)
-              # default to patch if unknown or PR_TITLE empty
-              BUMP="patch"
-              ;;
+            feat!:*) BUMP="major" ;;
+            feat:*)  BUMP="minor" ;;
+            fix:*|refactor:*|chore:*|docs:*|test:*) BUMP="patch" ;;
+            *) BUMP="patch" ;;
           esac
           echo "Bump type: $BUMP"
 
@@ -88,18 +102,23 @@ jobs:
 
           TAG="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
 
-          # 6) Ensure tag is new; if exists, bump patch until free
-          while git rev-parse "$TAG" >/dev/null 2>&1; do
+          # 6) Ensure tag is unique
+          while git show-ref --tags --verify --quiet "refs/tags/$TAG"; do
             echo "Tag $TAG already exists, incrementing patch…"
             NEW_PATCH=$((NEW_PATCH + 1))
             TAG="v${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}"
           done
-
           echo "New tag: $TAG"
 
-          # 7) Release notes from commits since LAST_TAG on first-parent (PR merge history)
-          NOTES="$(git log "${LAST_TAG}..HEAD" --first-parent --pretty=format:"- %s" | \
-            grep -E '^(feat|fix|chore|docs|test|refactor):' || true)"
+          # 7) Release notes:
+          #    If we have a prior tag date, collect commits since that timestamp (first-parent).
+          #    Otherwise (no prior tag), mark as initial release.
+          if [ -n "${TAG_START_DATE:-}" ]; then
+            NOTES="$(git log --since="$TAG_START_DATE" --first-parent --pretty=format:"- %s" | \
+              grep -E '^(feat|fix|chore|docs|test|refactor):' || true)"
+          else
+            NOTES=""
+          fi
           if [ -z "$NOTES" ]; then
             NOTES="Initial release"
           fi
@@ -109,7 +128,6 @@ jobs:
           # 8) Create tag & publish release
           git tag "$TAG"
           git push origin "$TAG"
-
           gh release create "$TAG" \
             --title "Release ${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}" \
             --notes "$NOTES"
