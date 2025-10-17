@@ -42,4 +42,5 @@ jobs:
           # Create tag and draft release
           git tag $TAG
           git push origin $TAG
-          gh release create $TAG --title "Release ${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}" --notes "$NOTES" --draft
+          gh release create $TAG --title "Release ${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}" --notes "$NOTES"
+          # gh release create $TAG --title "Release ${NEW_MAJOR}.${NEW_MINOR}.${NEW_PATCH}" --notes "$NOTES" --draft

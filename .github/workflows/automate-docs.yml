@@ -37,7 +37,7 @@ jobs:
           git commit -m "docs: auto-update wiki" || git commit -m "docs: force update wiki"
           git push https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git master
       - name: Auto-Update Project
-        if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev'
+        if: github.event.pull_request.merged == true && (github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'main')
         run: |
           ISSUE_NUMBER=${{ github.event.pull_request.number }}
           PR_BODY=$(gh pr view $ISSUE_NUMBER --json body --jq '.body')
