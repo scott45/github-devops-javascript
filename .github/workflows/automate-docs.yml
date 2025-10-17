@@ -1,0 +1,50 @@
+name: Auto-Update Wiki & Project
+on:
+  issues:
+    types: [opened, closed] # [opened, edited, closed, reopened]
+jobs:
+  update:
+    if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GH CLI
+        run: |
+          sudo apt update && sudo apt install curl -y
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list
+          sudo apt update && sudo apt install gh -y
+          gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
+      - name: Auto-Update Wiki
+        run: |
+          mkdir -p wiki
+          # Get open issues
+          ISSUES_OPEN=$(gh issue list --state open --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No open issues")
+          # Get closed issues
+          ISSUES_CLOSED=$(gh issue list --state closed --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No closed issues")
+          # Generate Markdown with subsections
+          echo -e "# Project Updates\n\n## To-Do\n$ISSUES_OPEN\n\n## Done\n$ISSUES_CLOSED" > wiki/Home.md
+          git clone https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki-temp || (
+            echo "Error: Wiki repo not found. Please initialize the wiki in the GitHub UI at https://github.com/${{ github.repository }}/wiki"
+            exit 1
+          )
+          cp wiki/Home.md wiki-temp/
+          cd wiki-temp
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git checkout master || git checkout -b master
+          git add .
+          git commit -m "docs: auto-update wiki" || git commit -m "docs: force update wiki"
+          git push https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git master
+      - name: Auto-Update Project
+        if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'dev'
+        run: |
+          ISSUE_NUMBER=${{ github.event.pull_request.number }}
+          PR_BODY=$(gh pr view $ISSUE_NUMBER --json body --jq '.body')
+          LINKED_ISSUE_NUM=$(echo "$PR_BODY" | grep -oE 'Closes #([0-9]+)' | sed 's/Closes #//g' | head -n1)
+          if [ -n "$LINKED_ISSUE_NUM" ]; then
+            ISSUE_ID=$(gh api graphql -f query="query { repository(owner: \"${{ github.repository_owner }}\", name: \"${{ github.repository_name }}\") { issue(number: $LINKED_ISSUE_NUM) { id } } }" --jq '.data.repository.issue.id')
+            gh api graphql -f query="mutation { updateProjectV2ItemFieldValue(input: { projectId: \"${{ secrets.PROJECT_ID }}\", itemId: \"$ISSUE_ID\", fieldId: \"${{ secrets.STATUS_FIELD_ID }}\", value: { singleSelectOptionId: \"${{ secrets.DONE_OPTION_ID }}\" } }) { projectV2Item { id } } }"
+          else
+            echo "No linked issue found in PR body (e.g., 'Closes #X'). Skipping project update."
+          fi

@@ -1,0 +1,31 @@
+name: Deploy to GHCR (Dev)
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+jobs:
+  deploy:
+    if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - name: Publish to GH Packages (Docker)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.DEMO_GITHUB_TOKEN }}
+      - run: |
+          # Extract PR number from merge commit message (e.g., "Merge pull request #5...")
+          PR_NUMBER=$(git log -1 --pretty=%B | grep -oE 'Merge pull request #([0-9]+)' | sed 's/Merge pull request #//g' || echo "unknown")
+          # Use short commit hash (first 7 chars)
+          COMMIT_HASH=$(git rev-parse --short=7 HEAD)
+          # Construct tag (e.g., pr5-a1b2c3d)
+          TAG="pr${PR_NUMBER}-${COMMIT_HASH}"
+          # Build and push with dynamic tag
+          docker build -t ghcr.io/${{ github.repository }}:$TAG .
+          docker push ghcr.io/${{ github.repository }}:$TAG
