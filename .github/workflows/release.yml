@@ -19,7 +19,7 @@ jobs:
           sudo apt update && sudo apt install gh -y
           gh auth login --with-token <<< ${{ secrets.DEMO_GITHUB_TOKEN }}
 
-      - name: Generate Release and Publish (latest tag by time, auto notes)
+      - name: Generate Release and Publish (latest tag by time, auto notes w/ SemVer previous)
         env:
           GH_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.DEMO_GITHUB_TOKEN }}
@@ -29,13 +29,12 @@ jobs:
           # Ensure tags are present locally
           git fetch --tags --force
 
-          # Get newest and previous tags by creation time (not ancestry)
+          # Get newest tag by creation time (not ancestry)
           mapfile -t TAGS < <(git for-each-ref --sort=-creatordate --format '%(refname:short)' refs/tags)
           RAW_LAST_TAG="${TAGS[0]:-}"
-          RAW_PREV_TAG="${TAGS[1]:-}"
 
           if [ -z "$RAW_LAST_TAG" ]; then
-            # No tags at all yet: start from v1.0.0
+            # No tags at all yet: start from v1.0.0 baseline
             LAST_TAG_NORM="v1.0.0"
           else
             # Normalize newest tag to vX.Y.Z for version parsing
@@ -43,7 +42,6 @@ jobs:
           fi
 
           echo "Newest tag by time: ${RAW_LAST_TAG:-<none>}"
-          echo "Previous tag by time: ${RAW_PREV_TAG:-<none>}"
 
           # Parse current version numbers from LAST_TAG_NORM (vX.Y.Z)
           CUR_MAJ="$(echo "$LAST_TAG_NORM" | sed -n 's/^v\([0-9]\+\)\.\([0-9]\+\)\.\([0-9]\+\)$/\1/p')"
@@ -89,18 +87,29 @@ jobs:
           done
           echo "New tag: $TAG"
 
+          # --- NEW: find the immediate previous SemVer tag (greatest version < TAG) ---
+          NEW_SEMVER="${TAG#v}"
+          PREV_TAG="$(
+            git tag --list \
+              | sed 's/^v//' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | awk -v t="$NEW_SEMVER" '$0 < t { last=$0 } END { if (last != "") print "v" last }'
+          )"
+          echo "Previous SemVer tag: ${PREV_TAG:-<none>}"
+
           # Create and push the tag
           git tag "$TAG"
           git push origin "$TAG"
 
-          # Create the release with GitHub's auto-generated notes.
-          # If we have a previous tag by time, use it as the notes start.
-          if [ -n "${RAW_PREV_TAG:-}" ]; then
+          # Create the release with GitHub's auto-generated notes between PREV_TAG and TAG
+          if [ -n "${PREV_TAG:-}" ]; then
             gh release create "$TAG" \
               --title "Release ${NEW_MAJ}.${NEW_MIN}.${NEW_PAT}" \
               --generate-notes \
-              --notes-start-tag "$RAW_PREV_TAG"
+              --notes-start-tag "$PREV_TAG"
           else
+            # First release ever (or no SemVer tag below new tag)
             gh release create "$TAG" \
               --title "Release ${NEW_MAJ}.${NEW_MIN}.${NEW_PAT}" \
               --generate-notes
