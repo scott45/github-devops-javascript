@@ -1,8 +1,7 @@
 name: Auto-Update Wiki & Project
 on:
   issues:
-  pull_request:
-    branches: [dev]  # Trigger on PRs targeting dev
+    types: [opened, closed] # [opened, edited, closed, reopened]
 jobs:
   update:
     if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
