@@ -2,8 +2,8 @@ name: Auto-Update Wiki & Project
 on:
   push:
     branches: [ "dev", "main" ]  # Trigger on PRs targeting dev
-  pull_request:
-    types: [opened, edited, reopened, closed]
+  # pull_request:
+  #   types: [opened, edited, reopened, closed]
 jobs:
   update:
     if: github.actor != 'dependabot[bot]' && github.actor != 'dependabot-preview[bot]'
@@ -26,8 +26,8 @@ jobs:
           # Get closed issues and merged PRs for Done
           ISSUES_CLOSED=$(gh issue list --state closed --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No closed issues")
           PRS_MERGED=$(gh pr list --state merged --json title,createdAt --jq '.[] | "- \(.title) (Created: \(.createdAt))"' || echo "No merged PRs")
-          # Generate Markdown with subsections
-          echo -e "# Project Updates\n\n## To-Do\n$ISSUES_OPEN\n$PRS_OPEN\n\n## Done\n$ISSUES_CLOSED\n$PRS_MERGED" > wiki/Home.md
+          # Generate Markdown with subheadings for issues and PRs
+          echo -e "# Project Updates\n\n## To-Do\n### Open Issues\n$ISSUES_OPEN\n### Open PRs\n$PRS_OPEN\n\n## Done\n### Closed Issues\n$ISSUES_CLOSED\n### Merged PRs\n$PRS_MERGED" > wiki/Home.md
           git clone https://${{ github.actor }}:${{ secrets.DEMO_GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki-temp || (
             echo "Error: Wiki repo not found. Please initialize the wiki in the GitHub UI at https://github.com/${{ github.repository }}/wiki"
             exit 1
