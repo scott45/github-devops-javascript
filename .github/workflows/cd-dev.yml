@@ -1,5 +1,6 @@
 name: Deploy to GHCR (Dev)
 on:
+  # this workflow will be triggered when a push to dev branch is made
   push:
     branches:
       - dev
